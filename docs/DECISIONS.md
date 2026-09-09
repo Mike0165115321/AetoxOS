@@ -8274,3 +8274,44 @@ The takeover strip is drawn inside Aetox's own window, and the foreground model 
 **Deliberately not done:** no fallback model invented for `ollama` (§200's reasoning holds), and no Go touched at all. The backend's contract was correct; only the screen was not keeping it. What this still does not do is *say why* the list is empty — a server that is down and a key that is refused arrive here as the same `[]`, and telling them apart is a signature change, not a fix to a picker.
 
 **Verified:** [modelCustomId.test.ts](../desktop/frontend/src/test/modelCustomId.test.ts) — the box carries the model in use, a typed id reaches `onSwitchModel`, the line names the provider and the retry brings the dropdown back, and a slow list never draws the empty shape on its way in.
+
+## 241. Decision — Expanding External Providers: Google Antigravity, GitHub Copilot Pro, Kilo Code, and xAI (2026-09-09)
+
+**Trigger:** owner — *"เตรียมเพิ่มระบบ GitHub Copilot Pro Kilo Code Grok/xAI OAuth ด้วยนะครับ ก่อนทำไปอ่านเอกสารปลายทางมาให้ชัด GitHub Copilot Pro เคยเเพิ่มแล้วเอาออก ตอนนี้น่าจะได้อยู่แหละมั้ง อย่าลืมโลโก้ด้วยทำเสร็จอย่าลืมอัปเกรดเอกสารด้วยนะครับ"* and *"ตรวจโค้ดเดิมก่อนเริ่มว่าทำ Antigravity OAuth ถึงขั้นไหน"*.
+
+This decision records the evaluation, security classification, and integration architecture for four external provider workflows in Aetox: Google Antigravity, GitHub Copilot Pro, Kilo Code, and xAI (Grok).
+
+### 241.1 Four Providers, Four Honest Truths
+
+| Provider | Mechanism | Risk Level | Endpoint / Routing | Target Status & Research Findings |
+|---|---|---|---|---|
+| **Google Antigravity** | OAuth 2.0 PKCE ([internal/oauth/antigravity.go](../internal/oauth/antigravity.go)) | `RiskRestricted` | `cloudcode-pa.googleapis.com` | Borrows Cloud Code/Antigravity editor client ID (`1071006060591-tm8pt4sppkuhve1pqu4vblbe6e13n2t8.apps.googleusercontent.com`). Generous preview quota for `gemini-3.8-flash`, `gemini-3-pro`, `claude-opus-4-5-thinking`. Risk of Google account flagging if abused. |
+| **GitHub Copilot Pro** | RFC 8628 Device Flow ([internal/oauth/copilot.go](../internal/oauth/copilot.go)) | `RiskRestricted` | `api.github.com/copilot_internal/v2/token` & dynamic individual endpoints | Borrows VS Code Copilot client ID (`Iv1.b507a08c87ecfe98`). Requires token exchange via `/copilot_internal/v2/token` and editor identification headers (`Editor-Version: vscode/1.96.2`, `Editor-Plugin-Version: copilot-chat/0.24.1`). Discovers and imports local sign-in tokens from `~/.config/github-copilot/hosts.json` and `apps.json`. |
+| **Kilo Code** | API Key Gateway ([internal/provider/catalog.go](../internal/provider/catalog.go)) | `RiskDirect` | `https://api.kilo.ai/v1` | Unified OpenAI-compatible gateway to 500+ frontier and open-source models (Anthropic, OpenAI, Meta, DeepSeek) under `KILO_API_KEY`. Supports local CLI session import from `~/.config/kilo/session.json` and `~/.kilo/config.json`. |
+| **xAI (Grok)** | Direct API Key ([internal/provider/catalog.go](../internal/provider/catalog.go)) | `RiskDirect` | `https://api.x.ai/v1` | Retained as first-party direct API key. Public xAI developer documentation (`docs.x.ai`, `console.x.ai`) only provides API keys. xAI does **not** provide consumer subscription OAuth (e.g. sign-in with X to use web Grok quota in 3rd-party tools). Harnesses pretending to offer "consumer Grok OAuth" rely on web scraping or unofficial X auth cookies, violating Aetox's clean architectural boundary. |
+
+### 241.2 Why GitHub Copilot Pro Is Restored under `RiskRestricted`
+
+Copilot was previously retired in §61/§66 out of caution over borrowed editor client credentials. However, following §69 and §70 (which restored ChatGPT `codex` OAuth), Aetox adheres to a consistent principle: **we do not paternalistically block engineers from using subscriptions they pay for**, but we **must** be completely honest about the risk.
+
+- Marking Copilot as `RiskRestricted` in [internal/oauth/token.go](../internal/oauth/token.go) renders the Amber caution badge in Settings, explaining that this session uses borrowed editor credentials.
+- The authentication runs standard RFC 8628 Device Authorization: the user visits `github.com/login/device` and enters a user code.
+- A short-lived token (`tid=...;exp=...`) is minted from `https://api.github.com/copilot_internal/v2/token` and refreshed automatically 5 minutes before expiry.
+- If the user already has the GitHub Copilot CLI or VS Code installed, `ImportCopilotCLI()` automatically imports their existing token from `~/.config/github-copilot/hosts.json`.
+
+### 241.3 Kilo Code: 500+ Model Unified Gateway
+
+Kilo Code provides an OpenAI-compatible gateway (`https://api.kilo.ai/v1`) aggregating models from Anthropic, OpenAI, DeepSeek, Meta, and others under a unified billing key (`KILO_API_KEY`).
+- Registered in [internal/provider/catalog.go](../internal/provider/catalog.go) with default fallback model `kilo/anthropic/claude-sonnet-4.5`.
+- Supported for zero-config import via [internal/oauth/kilo.go](../internal/oauth/kilo.go) (`ImportKiloCLI()`), reading session tokens from `~/.config/kilo/session.json` or `~/.kilo/config.json`.
+
+### 241.4 Brand Marks and Desktop UI
+
+Brand marks were added to [providerMarks.ts](../desktop/frontend/src/lib/providerMarks.ts) and [docs/index.html](index.html):
+- `github-copilot`: 24x24 inlined SVG brand mark from the Simple Icons set.
+- `kilo`: Inlined SVG mark with 24x24 coordinate transformation.
+- `antigravity`: Google four-pointed star mark shared with Gemini.
+- Verified by `TestEveryDesktopProviderHasABrandMark` zero-allocation test guard.
+
+**Status:** `Direct` across `internal/oauth`, `internal/provider`, `internal/model`, `desktop`, and `docs/`.
+
