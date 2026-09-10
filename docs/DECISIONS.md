@@ -8315,3 +8315,27 @@ Brand marks were added to [providerMarks.ts](../desktop/frontend/src/lib/provide
 
 **Status:** `Direct` across `internal/oauth`, `internal/provider`, `internal/model`, `desktop`, and `docs/`.
 
+
+## 242. Decision — Google Antigravity Is Removed, Not Warned About (2026-09-10)
+
+**Trigger:** owner — *"เอา Google Antigavity ออกหน่อยครับ ผู้ให้บริการเจ้าเดียว แค่เจ้าเดียว"*, and when asked what that meant: *"ลบแค่ Antigravity — provider อื่น (ChatGPT/Copilot/Kilo/OpenRouter) อยู่ครบเหมือนเดิม"*.
+
+§241 added this provider and chose the honest-warning route: a borrowed Google editor client ID, `RiskRestricted`, the Amber badge, a Note telling the user to sign in with a secondary account. The owner's call now is the other route — the tool should not reach Google's preview quota through another product's client at all. Removal is the decision; the warning was the alternative it replaces.
+
+**What went, in one commit, with nothing left half-wired:**
+
+| Layer | Gone |
+|---|---|
+| Wire | [internal/model/antigravity.go](../internal/model/antigravity.go); `fetchAntigravityQuota` and its two response types in [balance.go](../internal/model/balance.go); the `RuntimeAntigravity` case in [factory.go](../internal/model/factory.go) |
+| Sign-in | [internal/oauth/antigravity.go](../internal/oauth/antigravity.go); the `Start`, `Finish` and refresh wiring in [token.go](../internal/oauth/token.go); the adopt-a-local-CLI path in [desktop/oauth.go](../desktop/oauth.go) |
+| Catalog | the `antigravity` row, `RuntimeAntigravity` and `QuotaAntigravity` in [internal/provider/catalog.go](../internal/provider/catalog.go) — after which `Fetched()` names two sources, not three |
+| UI | `antigravity` in `desktopProviders`; its brand mark in [providerMarks.ts](../desktop/frontend/src/lib/providerMarks.ts); `id="lg-antigravity"` and the `antigravity.google` link in [docs/index.html](index.html); the `account.window.gemini`, `gemini_week`, `claude` and `claude_week` keys in both locales, which this provider was the only source of |
+| Dev | `cmd/probe-antigravity/` — it existed to interrogate that endpoint and nothing else |
+
+**A credential left behind stops being usable, not merely hidden.** `"antigravity"` joins `removedProviders` in [internal/oauth/store.go](../internal/oauth/store.go) — the list §64 started — so an `oauth.json` written while the provider existed reads as signed out: no `Get`, no token source, never refreshed, never sent. It is the first entry on that list whose provider has also left the catalog, and the first whose reason is the owner's own call rather than a reading of someone's terms, which is exactly why it is written down here instead of left to be inferred from the code. `TestRemovedProviderCredentialsAreDropped` now carries a literal `antigravity` entry so the guarantee stays tested rather than merely asserted.
+
+**What deliberately stayed.** `bench.ps1` and `BENCHMARK.md` measure the Antigravity *IDE* as a competitor desktop app; `style.css` and [docs/index.html](index.html) cite its composition as where a look came from. Those name a program on the same machine, not a route to a quota, and deleting the provenance would lose information without removing a capability. The release notes that describe this sign-in were not rewritten either: a note saying a version shipped something stays true after the thing is taken out, and the removal is what this section records.
+
+**Rejected alternative — keep the row and hide it from Settings.** It leaves the catalog answering for an endpoint no user can reach and a construction path that must keep working with nothing behind it: the shape of debt §64 was written to avoid. A bar that fires on everything teaches users to click past it (§66); a provider kept as a warning teaches them a warning means nothing.
+
+**Status:** `Direct`. `go build ./...` and `go vet ./...` clean, no `golangci-lint` issue in any file this touched, `vitest run` 1523/1523. `go test ./...` is green except `TestOneSceneBecomesAClip`, which cannot spawn a browser on this machine (`spawn UNKNOWN`, deterministic and unrelated), and `TestGitLayerOrdersByMostRecentlyTouched`, which passes on its own and is timing-sensitive under a full-suite run.
